@@ -6,7 +6,7 @@
 
 <p align="center">A Dalamud plugin that shows enemy and FATE spawn areas on the native in-game map.</p>
 
-**Beta** (`0.1.0.0`). Install from the Dalamud plugin installer after adding the custom repository below. This is not a live enemy radar — it looks up standing spawn camps (and optionally FATE camps) and draws gathering-style circles on the map.
+**Beta** (`0.1.0.0`). Install from the Dalamud plugin installer after adding the custom repository below. This is not a live enemy radar; it looks up standing spawn camps (and optionally FATE camps) and draws gathering-style circles on the map.
 
 ## Install
 
@@ -33,7 +33,13 @@ This is a custom (third-party) repository, not the official Dalamud plugin list.
 | `/efind` | Open the plugin window |
 | `/efind Name` | Look up that name and open the map |
 
-Name lookup tries an enemy first, then a FATE if no enemy spawn is found.
+Name lookup tries to find the name of an enemy first, then the name of a FATE if no enemy spawn is found.
+
+E.g.:
+
+- `/efind Laughing Toad` (an enemy) will show Cape Westwind in Western Thanalan.
+- `/efind Taken` (a fate) will show Zanr'ak in Southern Thanalan
+
 
 ## Click sources
 
@@ -46,23 +52,43 @@ Click an entry in a supported book to open its spawn on the map. Each source can
 | Relic book FATE clicks | On | Trials of the Braves FATE tab |
 | Other enemy books | On | Bozja field records |
 
+## Screenshots
+
+### Spawn Locations
+
+When there are multiple known spawn locations all of the locations will be indicated.
+
+When clicking on a fate in one of the Atma books (or searching for it) the fate will show in the same way.
+
+![Spawn Location Demonstration](images/Circle%20Illustration.png)
+
+### Hunt Log
+
+Click on the name itself - clicking on the image won't show the map location
+![Hunting Log Demonstration](images/Hunting%20Log%20SS.png)
+
+### Fate Chains
+
+When searching for a fate, if the fate has a prerequisite all prerequisite fates will be displayed in a separate dialog. Clicking "Show" next to "The Enemy of My Enemy" in the screenshot below will show the spawn location of that fate.
+
+![Fate Chain Demonstration](images/Fate%20Chain%20SS.png)
+
 ## Other settings
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Include FATE camps | Off | When looking up an **enemy**, also draw FATE camps for that enemy on the same map. Separate from relic-book FATE clicks. |
-| Circle radius | 40 yalms | 15–80 |
-| Wiki cache size | 32 | 0–64 in-memory lookups. Cleared on unload, or with **Clear cache**. |
+| Include FATE camps | Off | When looking up an **enemy**, also draw FATE camps for that enemy on the same map |
+| Circle radius | 40 yalms | Range: 15–80 yalms |
+| Wiki cache size | 32 | 0–64 in-memory lookups. Cleared on unload, or with **Clear cache**. This is a quantity of lookups, not disk size |
 | History | Last 20 names | Click a row to look it up again. |
 
 ## Spawn lookup
 
 - Gamer Escape and Console Games Wiki, in parallel
-- Standing overworld camps by default; quest-only rows are skipped
-- When several zones are listed, prefers the higher-level standing camp
-- Relic-book FATEs use wiki coordinates (`prev-fate` / required status)
+- Standing overworld spawn locations by default, spawn locations that are unique to quests (I.e.: During a specific quest, the desired enemy will spawn - it will ignore those)
+- When several zones are listed, the lookup will favour the higher-level standing spawn location
 - If a FATE needs another FATE first, a chain window lists them in order so you can show the prerequisite or the later FATE
 
-## Out of scope
+## Not Supported
 
-Live nearby-enemy overlay / ObjectTable radar.
+Live nearby-enemy overlay, like quest enemies have in the mini map.
