@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.0.1.0</Version>
+    <Version>0.1.0.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -11,6 +11,8 @@
     <Description>Click an enemy name in the hunting log, relic book, or other enemy lists to show its spawn area on the map. Relic book FATE clicks are optional and show FATE spawn areas, including prerequisite chains. Hunting log: click the name, not the icon. /efind opens settings; /efind Name looks up an enemy.</Description>
     <Tags>map;hunt;enemies</Tags>
     <RepoUrl>https://github.com/aetherwrights/enemy-finder</RepoUrl>
+    <IconUrl>https://raw.githubusercontent.com/aetherwrights/enemy-finder/main/EnemyFinder/images/icon.png</IconUrl>
+    <Changelog>Initial public beta: hunt log, relic book (enemies and FATEs), Bozja field records, FATE chains, and /efind.</Changelog>
   </PropertyGroup>
 
   <ItemGroup>

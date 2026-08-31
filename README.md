@@ -6,9 +6,25 @@
 
 <p align="center">A Dalamud plugin that shows enemy and FATE spawn areas on the native in-game map.</p>
 
-Currently in **private alpha**. Load it as a Dev Plugin until it is published.
+**Beta** (`0.1.0.0`). Install from the Dalamud plugin installer after adding the custom repository below. This is not a live enemy radar — it looks up standing spawn camps (and optionally FATE camps) and draws gathering-style circles on the map.
 
-This is not a live enemy radar. It looks up standing spawn camps (and optionally FATE camps) and draws gathering-style circles on the map.
+## Install
+
+1. In game, open Dalamud settings: `/xlsettings`
+2. Open the **Experimental** tab
+3. Under **Custom Plugin Repositories**, paste this URL into an empty field:
+
+   ```
+   https://raw.githubusercontent.com/aetherwrights/enemy-finder/main/pluginmaster.json
+   ```
+
+4. Click the **+** button, then the **Save** icon
+5. Open the plugin installer: `/xlplugins`
+6. Search for **Enemy Finder** and install it
+
+To update later, use the installer’s update list (or reinstall). The same repository URL is used for updates.
+
+This is a custom (third-party) repository, not the official Dalamud plugin list. You can also build from source and add `EnemyFinder/bin/Debug/EnemyFinder.dll` under **Experimental → Dev Plugins**.
 
 ## Commands
 
@@ -46,14 +62,6 @@ Click an entry in a supported book to open its spawn on the map. Each source can
 - When several zones are listed, prefers the higher-level standing camp
 - Relic-book FATEs use wiki coordinates (`prev-fate` / required status)
 - If a FATE needs another FATE first, a chain window lists them in order so you can show the prerequisite or the later FATE
-
-## Install (alpha)
-
-1. Build `EnemyFinder/EnemyFinder.csproj` (`Debug` is fine for Dev Plugin use)
-2. In Dalamud, add `EnemyFinder/bin/Debug/EnemyFinder.dll` as a Dev Plugin
-3. Enable and load it
-
-Dalamud reads the installer icon from `images/icon.png` next to the DLL (copied there on build).
 
 ## Out of scope
 
