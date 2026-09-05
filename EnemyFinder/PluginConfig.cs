@@ -16,6 +16,12 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public bool IncludeFateCamps { get; set; }
 
+    /// <summary>
+    /// When true, enemies found in both the overworld and a duty prompt for which map to open.
+    /// Duty-only enemies always open the duty map.
+    /// </summary>
+    public bool AskDutyOrOverworld { get; set; }
+
     public int CircleRadiusYalms { get; set; } = DefaultRadiusYalms;
 
     public int WikiCacheSize { get; set; } = DefaultWikiCacheSize;

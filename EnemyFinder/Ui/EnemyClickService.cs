@@ -34,6 +34,8 @@ public sealed class EnemyClickService : IDisposable
     private long lastClickTicks;
     private IReadOnlyList<FateChainStep>? fateChainPrompt;
     private bool focusFateChainPrompt;
+    private IReadOnlyList<DutyChoice>? dutyChoicePrompt;
+    private bool focusDutyChoicePrompt;
 
     public EnemyClickService(
         IAddonEventManager addonEvents,
@@ -76,6 +78,12 @@ public sealed class EnemyClickService : IDisposable
     }
 
     public void DrawWindows()
+    {
+        this.DrawFateChainWindow();
+        this.DrawDutyChoiceWindow();
+    }
+
+    private void DrawFateChainWindow()
     {
         if (this.fateChainPrompt == null || this.fateChainPrompt.Count == 0)
         {
@@ -132,25 +140,84 @@ public sealed class EnemyClickService : IDisposable
         }
     }
 
-    public void ShowEnemyByName(string enemyName)
-        => this.StartLookup(token => this.LookupNameAsync(enemyName, token));
+    private void DrawDutyChoiceWindow()
+    {
+        if (this.dutyChoicePrompt == null || this.dutyChoicePrompt.Count == 0)
+        {
+            return;
+        }
 
-    public void ShowEnemyByBNpcNameId(uint bNpcNameId) => this.StartLookup(token => this.spawnLocations.GetLocationAsync(bNpcNameId, this.config.IncludeFateCamps, token));
+        var open = true;
+        ImGui.SetNextWindowSize(new Vector2(440, 0), ImGuiCond.FirstUseEver);
+        if (this.focusDutyChoicePrompt)
+        {
+            ImGui.SetNextWindowFocus();
+            this.focusDutyChoicePrompt = false;
+        }
+
+        if (ImGui.Begin("Enemy Finder — Duty or overworld", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            var name = this.dutyChoicePrompt[0].Location.Name;
+            ImGui.TextWrapped($"{name} is in the overworld and in a duty. Choose which map to open:");
+            ImGui.Separator();
+
+            for (var i = 0; i < this.dutyChoicePrompt.Count; i++)
+            {
+                var choice = this.dutyChoicePrompt[i];
+                if (ImGui.Button($"Show##duty-choice-{i}"))
+                {
+                    this.ShowResolvedLocation(choice.Location);
+                    open = false;
+                }
+
+                ImGui.SameLine();
+                ImGui.TextUnformatted(choice.Label);
+            }
+
+            ImGui.Separator();
+            if (ImGui.Button("Close"))
+            {
+                open = false;
+            }
+        }
+
+        ImGui.End();
+        if (!open)
+        {
+            this.dutyChoicePrompt = null;
+        }
+    }
+
+    public void ShowEnemyByName(string enemyName)
+        => this.StartEnemyLookup(token => this.LookupNameAsync(enemyName, token));
+
+    public void ShowEnemyByBNpcNameId(uint bNpcNameId)
+        => this.StartEnemyLookup(token => this.spawnLocations.GetEnemyOptionsAsync(bNpcNameId, this.config.IncludeFateCamps, token));
 
     public void ShowFateById(uint fateId) => this.StartLookup(token => this.spawnLocations.GetFateLocationAsync(fateId, token));
 
     public void ShowFateByName(string fateName) => this.StartLookup(token => this.spawnLocations.GetFateLocationAsync(fateName, token));
 
-    private async Task<SpawnLocation> LookupNameAsync(string name, CancellationToken cancellationToken)
+    private async Task<EnemySpawnOptions> LookupNameAsync(string name, CancellationToken cancellationToken)
     {
         try
         {
-            return await this.spawnLocations.GetLocationAsync(name, this.config.IncludeFateCamps, cancellationToken).ConfigureAwait(false);
+            return await this.spawnLocations.GetEnemyOptionsAsync(name, this.config.IncludeFateCamps, cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException)
         {
-            return await this.spawnLocations.GetFateLocationAsync(name, cancellationToken).ConfigureAwait(false);
+            var fate = await this.spawnLocations.GetFateLocationAsync(name, cancellationToken).ConfigureAwait(false);
+            return new EnemySpawnOptions(fate, []);
         }
+    }
+
+    private void StartEnemyLookup(Func<CancellationToken, Task<EnemySpawnOptions>> lookup)
+    {
+        this.lookupCts?.Cancel();
+        this.lookupCts?.Dispose();
+        this.lookupCts = new CancellationTokenSource();
+        var token = this.lookupCts.Token;
+        _ = this.ShowEnemyOptionsAsync(lookup(token), token);
     }
 
     private void StartLookup(Func<CancellationToken, Task<SpawnLocation>> lookup)
@@ -162,40 +229,102 @@ public sealed class EnemyClickService : IDisposable
         _ = this.ShowLookupAsync(lookup(token), token);
     }
 
+    private async Task ShowEnemyOptionsAsync(Task<EnemySpawnOptions> lookup, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var options = await lookup.ConfigureAwait(false);
+            if (this.config.AskDutyOrOverworld && options.HasChoice)
+            {
+                await this.framework.RunOnFrameworkThread(() =>
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    this.dutyChoicePrompt = this.BuildDutyChoices(options);
+                    this.focusDutyChoicePrompt = true;
+                    this.RecordHistory(options.Preferred.Name);
+                    this.chatGui.Print(
+                        $"Enemy Finder: {options.Preferred.Name} is in the overworld and in a duty. Pick which map to open.");
+                });
+                return;
+            }
+
+            await this.PresentLocationAsync(options.Preferred, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Replaced by a newer lookup.
+        }
+        catch (Exception ex)
+        {
+            this.log.Error(ex, "Failed to show enemy location");
+            await this.framework.RunOnFrameworkThread(() =>
+            {
+                this.chatGui.PrintError("Enemy Finder: could not find a spawn location.");
+            });
+        }
+    }
+
+    private List<DutyChoice> BuildDutyChoices(EnemySpawnOptions options)
+    {
+        var choices = new List<DutyChoice>();
+        if (options.Overworld != null)
+        {
+            var zone = this.mapMarkers.GetTerritoryName(options.Overworld.TerritoryTypeId) ?? "overworld";
+            choices.Add(new DutyChoice($"{zone} (overworld)", options.Overworld));
+        }
+
+        foreach (var duty in options.Duties)
+        {
+            var zone = this.mapMarkers.GetTerritoryName(duty.TerritoryTypeId) ?? "duty";
+            choices.Add(new DutyChoice($"{zone} (duty)", duty));
+        }
+
+        return choices;
+    }
+
+    private async Task PresentLocationAsync(SpawnLocation location, CancellationToken cancellationToken)
+    {
+        if (location.Prerequisites.Count > 0)
+        {
+            var chain = await this.ResolveFateChainAsync(location, cancellationToken).ConfigureAwait(false);
+            if (chain.Count > 1)
+            {
+                await this.framework.RunOnFrameworkThread(() =>
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    this.fateChainPrompt = chain;
+                    this.focusFateChainPrompt = true;
+                    this.RecordHistory(location.Name);
+                    this.chatGui.Print(
+                        $"Enemy Finder: {location.Name} needs {chain[0].Name} first. Pick which FATE to show on the map.");
+                });
+                return;
+            }
+        }
+
+        await this.framework.RunOnFrameworkThread(() =>
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                this.ShowResolvedLocation(location);
+            }
+        });
+    }
+
     private async Task ShowLookupAsync(Task<SpawnLocation> lookup, CancellationToken cancellationToken)
     {
         try
         {
             var location = await lookup.ConfigureAwait(false);
-            if (location.Prerequisites.Count > 0)
-            {
-                var chain = await this.ResolveFateChainAsync(location, cancellationToken).ConfigureAwait(false);
-                if (chain.Count > 1)
-                {
-                    await this.framework.RunOnFrameworkThread(() =>
-                    {
-                        if (cancellationToken.IsCancellationRequested)
-                        {
-                            return;
-                        }
-
-                        this.fateChainPrompt = chain;
-                        this.focusFateChainPrompt = true;
-                        this.RecordHistory(location.Name);
-                        this.chatGui.Print(
-                            $"Enemy Finder: {location.Name} needs {chain[0].Name} first. Pick which FATE to show on the map.");
-                    });
-                    return;
-                }
-            }
-
-            await this.framework.RunOnFrameworkThread(() =>
-            {
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    this.ShowResolvedLocation(location);
-                }
-            });
+            await this.PresentLocationAsync(location, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -987,4 +1116,6 @@ public sealed class EnemyClickService : IDisposable
         => checkbox != null && target == checkbox->AtkComponentButton.OwnerNode;
 
     private sealed record FateChainStep(string Name, SpawnLocation? Location);
+
+    private sealed record DutyChoice(string Label, SpawnLocation Location);
 }

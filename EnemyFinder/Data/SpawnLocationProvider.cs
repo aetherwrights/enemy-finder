@@ -66,6 +66,7 @@ public sealed class SpawnLocationProvider : IDisposable
     private readonly IPluginLog log;
     private readonly HttpClient httpClient;
     private readonly Dictionary<string, SpawnLocation> cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, EnemySpawnOptions> enemyCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<string> cacheOrder = new();
     private readonly object cacheLock = new();
 
@@ -84,20 +85,26 @@ public sealed class SpawnLocationProvider : IDisposable
 
     public async Task<SpawnLocation> GetLocationAsync(string enemyName, bool includeFateCamps, CancellationToken cancellationToken = default)
     {
+        var options = await this.GetEnemyOptionsAsync(enemyName, includeFateCamps, cancellationToken).ConfigureAwait(false);
+        return options.Preferred;
+    }
+
+    public async Task<EnemySpawnOptions> GetEnemyOptionsAsync(string enemyName, bool includeFateCamps, CancellationToken cancellationToken = default)
+    {
         var cacheKey = $"{enemyName.Trim().ToLowerInvariant()}|{(includeFateCamps ? "fate" : "standing")}";
-        if (this.TryGetCached(cacheKey, out var cached))
+        if (this.TryGetEnemyCached(cacheKey, out var cached))
         {
             this.log.Verbose("Spawn cache hit for {Enemy}", enemyName);
             return cached;
         }
 
-        var location = await this.LookupUncachedAsync(enemyName, includeFateCamps, cancellationToken).ConfigureAwait(false);
+        var options = await this.LookupUncachedEnemyAsync(enemyName, includeFateCamps, cancellationToken).ConfigureAwait(false);
         if (this.config.ClampedWikiCacheSize > 0)
         {
-            this.Remember(cacheKey, location);
+            this.RememberEnemy(cacheKey, options);
         }
 
-        return location;
+        return options;
     }
 
     public int CachedCount
@@ -106,7 +113,7 @@ public sealed class SpawnLocationProvider : IDisposable
         {
             lock (this.cacheLock)
             {
-                return this.cache.Count;
+                return this.cache.Count + this.enemyCache.Count;
             }
         }
     }
@@ -116,6 +123,7 @@ public sealed class SpawnLocationProvider : IDisposable
         lock (this.cacheLock)
         {
             this.cache.Clear();
+            this.enemyCache.Clear();
             this.cacheOrder.Clear();
         }
 
@@ -130,10 +138,16 @@ public sealed class SpawnLocationProvider : IDisposable
         }
     }
 
-    public async Task<SpawnLocation> GetLocationAsync(uint bNpcNameId, bool includeFateCamps, CancellationToken cancellationToken = default)
+    public async Task<EnemySpawnOptions> GetEnemyOptionsAsync(uint bNpcNameId, bool includeFateCamps, CancellationToken cancellationToken = default)
     {
         var name = this.GetBNpcName(bNpcNameId) ?? $"BNpcName#{bNpcNameId}";
-        return await this.GetLocationAsync(name, includeFateCamps, cancellationToken).ConfigureAwait(false);
+        return await this.GetEnemyOptionsAsync(name, includeFateCamps, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<SpawnLocation> GetLocationAsync(uint bNpcNameId, bool includeFateCamps, CancellationToken cancellationToken = default)
+    {
+        var options = await this.GetEnemyOptionsAsync(bNpcNameId, includeFateCamps, cancellationToken).ConfigureAwait(false);
+        return options.Preferred;
     }
 
     public async Task<SpawnLocation> GetFateLocationAsync(uint fateId, CancellationToken cancellationToken = default)
@@ -160,55 +174,56 @@ public sealed class SpawnLocationProvider : IDisposable
         return location;
     }
 
-    private async Task<SpawnLocation> LookupUncachedAsync(string enemyName, bool includeFateCamps, CancellationToken cancellationToken)
+    private async Task<EnemySpawnOptions> LookupUncachedEnemyAsync(string enemyName, bool includeFateCamps, CancellationToken cancellationToken)
     {
         var gamerEscapeTask = this.FetchGamerEscapeSpawnsAsync(enemyName, cancellationToken);
         var consoleGamesTask = this.FetchConsoleGamesSpawnsAsync(enemyName, cancellationToken);
 
         var gamerEscape = await gamerEscapeTask.ConfigureAwait(false);
-
-        var standing = PreferHighestLevel(gamerEscape.Where(spawn => !spawn.IsFate).ToList());
-        if (standing.Count > 0 && !includeFateCamps)
-        {
-            var fast = this.SelectSpawn(enemyName, standing, "Gamer Escape");
-            if (fast != null)
-            {
-                this.LogResolved(fast);
-                return fast;
-            }
-        }
-
         var consoleGames = await consoleGamesTask.ConfigureAwait(false);
         MarkMatchingFates(consoleGames, gamerEscape);
 
-        standing = PreferHighestLevel(gamerEscape.Where(spawn => !spawn.IsFate).ToList());
-        var source = "Gamer Escape";
-        if (standing.Count == 0)
-        {
-            standing = PreferHighestLevel(consoleGames.Where(spawn => !spawn.IsFate).ToList());
-            source = "Console Games Wiki";
-        }
-
-        var location = this.SelectSpawn(enemyName, standing, source);
-        if (location == null && includeFateCamps)
+        var standing = gamerEscape.Where(spawn => !spawn.IsFate)
+            .Concat(consoleGames.Where(spawn => !spawn.IsFate))
+            .ToList();
+        var options = this.BuildEnemyOptions(enemyName, standing);
+        if (!options.HasChoice && options.Overworld == null && options.Duties.Count == 0 && includeFateCamps)
         {
             var fateSpawns = gamerEscape.Count > 0 ? gamerEscape : consoleGames;
-            source = gamerEscape.Count > 0 ? "Gamer Escape (FATE)" : "Console Games Wiki";
-            this.log.Info("No overworld spawn for {Enemy}; using FATE locations from {Source}", enemyName, source);
-            location = this.SelectSpawn(enemyName, fateSpawns, source);
+            var fateSource = gamerEscape.Count > 0 ? "Gamer Escape (FATE)" : "Console Games Wiki";
+            this.log.Info("No overworld spawn for {Enemy}; using FATE locations from {Source}", enemyName, fateSource);
+            var fateLocation = this.SelectSpawn(enemyName, fateSpawns, fateSource);
+            if (fateLocation != null)
+            {
+                options = this.IsOverworldTerritory(fateLocation.TerritoryTypeId)
+                    ? new EnemySpawnOptions(fateLocation, [])
+                    : new EnemySpawnOptions(null, [fateLocation]);
+            }
         }
-        else if (location != null && includeFateCamps)
+        else if (includeFateCamps)
         {
-            location = this.AddSameMapCamps(location, gamerEscape.Concat(consoleGames).Where(spawn => spawn.IsFate));
+            var extra = gamerEscape.Concat(consoleGames).Where(spawn => spawn.IsFate);
+            options = new EnemySpawnOptions(
+                options.Overworld == null ? null : this.AddSameMapCamps(options.Overworld, extra),
+                options.Duties.Select(duty => this.AddSameMapCamps(duty, extra)).ToList());
         }
 
-        if (location == null)
+        if (options.Overworld == null && options.Duties.Count == 0)
         {
             throw new InvalidOperationException($"No spawn location found for '{enemyName}' on Console Games Wiki or Gamer Escape.");
         }
 
-        this.LogResolved(location);
-        return location;
+        if (options.Overworld != null)
+        {
+            this.LogResolved(options.Overworld);
+        }
+
+        foreach (var duty in options.Duties)
+        {
+            this.LogResolved(duty);
+        }
+
+        return options;
     }
 
     private async Task<SpawnLocation> LookupUncachedFateAsync(string fateName, CancellationToken cancellationToken)
@@ -251,7 +266,7 @@ public sealed class SpawnLocationProvider : IDisposable
         try
         {
             var text = await this.TryFetchGamerEscapeAsync(fateName, cancellationToken, preferEnemyTitle: false).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(text) ? FateWikiParse.Empty : ParseGamerEscapeFate(text);
+            return string.IsNullOrWhiteSpace(text) ? FateWikiParse.Empty : TagFateSource(ParseGamerEscapeFate(text), "Gamer Escape");
         }
         catch (Exception ex)
         {
@@ -265,7 +280,7 @@ public sealed class SpawnLocationProvider : IDisposable
         try
         {
             var text = await this.TryFetchConsoleGamesWikiAsync(fateName, cancellationToken, preferEnemyTitle: false).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(text) ? FateWikiParse.Empty : ParseConsoleGamesFate(text);
+            return string.IsNullOrWhiteSpace(text) ? FateWikiParse.Empty : TagFateSource(ParseConsoleGamesFate(text), "Console Games Wiki");
         }
         catch (Exception ex)
         {
@@ -279,7 +294,7 @@ public sealed class SpawnLocationProvider : IDisposable
         try
         {
             var text = await this.TryFetchGamerEscapeAsync(enemyName, cancellationToken).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(text) ? [] : ParseGamerEscape(text);
+            return string.IsNullOrWhiteSpace(text) ? [] : TagSource(ParseGamerEscape(text), "Gamer Escape");
         }
         catch (Exception ex)
         {
@@ -293,7 +308,7 @@ public sealed class SpawnLocationProvider : IDisposable
         try
         {
             var text = await this.TryFetchConsoleGamesWikiAsync(enemyName, cancellationToken).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(text) ? [] : ParseConsoleGamesWiki(text);
+            return string.IsNullOrWhiteSpace(text) ? [] : TagSource(ParseConsoleGamesWiki(text), "Console Games Wiki");
         }
         catch (Exception ex)
         {
@@ -308,6 +323,38 @@ public sealed class SpawnLocationProvider : IDisposable
             "Resolved {Enemy} via {Source} at {Camps} camp(s) on territory {Territory} map {Map} (first {X:0.0}, {Y:0.0})",
             location.Name, location.Source, location.Camps.Count, location.TerritoryTypeId, location.MapId,
             location.MapX, location.MapY);
+    }
+
+    private bool TryGetEnemyCached(string key, out EnemySpawnOptions options)
+    {
+        lock (this.cacheLock)
+        {
+            if (this.enemyCache.TryGetValue(key, out options!))
+            {
+                this.cacheOrder.Remove(key);
+                this.cacheOrder.AddFirst(key);
+                return true;
+            }
+
+            options = null!;
+            return false;
+        }
+    }
+
+    private void RememberEnemy(string key, EnemySpawnOptions options)
+    {
+        lock (this.cacheLock)
+        {
+            if (this.enemyCache.ContainsKey(key) || this.cache.ContainsKey(key))
+            {
+                this.cacheOrder.Remove(key);
+            }
+
+            this.cache.Remove(key);
+            this.enemyCache[key] = options;
+            this.cacheOrder.AddFirst(key);
+            this.EvictOverflowLocked();
+        }
     }
 
     private bool TryGetCached(string key, out SpawnLocation location)
@@ -347,15 +394,17 @@ public sealed class SpawnLocationProvider : IDisposable
         if (limit <= 0)
         {
             this.cache.Clear();
+            this.enemyCache.Clear();
             this.cacheOrder.Clear();
             return;
         }
 
-        while (this.cache.Count > limit && this.cacheOrder.Last != null)
+        while (this.cache.Count + this.enemyCache.Count > limit && this.cacheOrder.Last != null)
         {
             var evict = this.cacheOrder.Last.Value;
             this.cacheOrder.RemoveLast();
             this.cache.Remove(evict);
+            this.enemyCache.Remove(evict);
         }
     }
 
@@ -725,43 +774,87 @@ public sealed class SpawnLocationProvider : IDisposable
         return results;
     }
 
-    private SpawnLocation? SelectSpawn(string enemyName, List<RawSpawn> spawns, string sourceName)
+    private EnemySpawnOptions BuildEnemyOptions(string enemyName, List<RawSpawn> spawns)
     {
-        var resolved = new List<(uint TerritoryId, uint MapId, float X, float Y, int MinLevel)>();
+        var groups = this.CollectSpawnGroups(enemyName, spawns);
+        var overworld = groups
+            .Where(group => group.Overworld)
+            .OrderByDescending(group => group.MinLevel)
+            .ThenByDescending(group => group.Location.Camps.Count)
+            .Select(group => group.Location)
+            .FirstOrDefault();
+        var duties = groups
+            .Where(group => !group.Overworld)
+            .OrderByDescending(group => group.MinLevel)
+            .ThenByDescending(group => group.Location.Camps.Count)
+            .Select(group => group.Location)
+            .ToList();
+        return new EnemySpawnOptions(overworld, duties);
+    }
+
+    private SpawnLocation? SelectSpawn(string enemyName, List<RawSpawn> spawns, string? fallbackSource = null)
+    {
+        var groups = this.CollectSpawnGroups(enemyName, spawns, fallbackSource);
+        if (groups.Count == 0)
+        {
+            return null;
+        }
+
+        var pool = groups.Exists(group => group.Overworld)
+            ? groups.FindAll(group => group.Overworld)
+            : groups;
+
+        var selected = pool
+            .OrderByDescending(group => group.MinLevel)
+            .ThenByDescending(group => group.Location.Camps.Count)
+            .First();
+        return selected.Location;
+    }
+
+    private List<SpawnGroup> CollectSpawnGroups(string enemyName, List<RawSpawn> spawns, string? fallbackSource = null)
+    {
+        var resolved = new List<(uint TerritoryId, uint MapId, float X, float Y, int MinLevel, string Source, bool Overworld)>();
         foreach (var spawn in spawns)
         {
+            var sourceName = string.IsNullOrEmpty(spawn.Source) ? fallbackSource ?? "wiki" : spawn.Source;
             if (!this.TryResolveTerritoryByPlaceName(spawn.Place, out var territoryId, out var mapId))
             {
                 this.log.Verbose("Could not map place '{Place}' from {Source}", spawn.Place, sourceName);
                 continue;
             }
 
-            resolved.Add((territoryId, mapId, spawn.X, spawn.Y, spawn.MinLevel));
+            resolved.Add((territoryId, mapId, spawn.X, spawn.Y, spawn.MinLevel, sourceName, this.IsOverworldTerritory(territoryId)));
         }
 
         if (resolved.Count == 0)
         {
-            return null;
+            return [];
         }
 
-        var group = resolved
+        return resolved
             .GroupBy(entry => (entry.TerritoryId, entry.MapId))
-            .OrderByDescending(entries => entries.Max(entry => entry.MinLevel))
-            .ThenByDescending(entries => entries.Count())
-            .First();
-
-        var points = group
-            .Select(entry => new MapCamp(entry.X, entry.Y))
-            .Distinct()
+            .Select(group =>
+            {
+                var points = group
+                    .Select(entry => new MapCamp(entry.X, entry.Y))
+                    .Distinct()
+                    .ToList();
+                var location = new SpawnLocation(
+                    enemyName,
+                    group.Key.TerritoryId,
+                    group.Key.MapId,
+                    points,
+                    DefaultRadiusYalms,
+                    group.First().Source);
+                return new SpawnGroup(location, group.Max(entry => entry.MinLevel), group.First().Overworld);
+            })
             .ToList();
+    }
 
-        return new SpawnLocation(
-            enemyName,
-            group.Key.TerritoryId,
-            group.Key.MapId,
-            points,
-            DefaultRadiusYalms,
-            sourceName);
+    private bool IsOverworldTerritory(uint territoryId)
+    {
+        var sheet = this.dataManager.GetExcelSheet<TerritoryType>();
+        return sheet.TryGetRow(territoryId, out var territory) && territory.ContentFinderCondition.RowId == 0;
     }
 
     private SpawnLocation AddSameMapCamps(SpawnLocation location, IEnumerable<RawSpawn> extra)
@@ -886,16 +979,11 @@ public sealed class SpawnLocationProvider : IDisposable
         }
     }
 
-    private static List<RawSpawn> PreferHighestLevel(List<RawSpawn> spawns)
-    {
-        if (spawns.Count == 0 || spawns.All(spawn => spawn.MinLevel <= 0))
-        {
-            return spawns;
-        }
+    private static List<RawSpawn> TagSource(List<RawSpawn> spawns, string source)
+        => spawns.ConvertAll(spawn => spawn with { Source = source });
 
-        var highest = spawns.Max(spawn => spawn.MinLevel);
-        return spawns.Where(spawn => spawn.MinLevel == highest).ToList();
-    }
+    private static FateWikiParse TagFateSource(FateWikiParse parse, string source)
+        => parse.Spawns.Count == 0 ? parse : parse with { Spawns = TagSource(parse.Spawns, source) };
 
     private static bool SameCamp(RawSpawn left, RawSpawn right)
         => MathF.Abs(left.X - right.X) < 0.6f && MathF.Abs(left.Y - right.Y) < 0.6f;
@@ -1002,7 +1090,9 @@ public sealed class SpawnLocationProvider : IDisposable
         this.httpClient.Dispose();
     }
 
-    private readonly record struct RawSpawn(string Place, float X, float Y, bool IsFate, int MinLevel);
+    private readonly record struct RawSpawn(string Place, float X, float Y, bool IsFate, int MinLevel, string Source = "");
+
+    private readonly record struct SpawnGroup(SpawnLocation Location, int MinLevel, bool Overworld);
 
     private readonly record struct FateWikiParse(List<RawSpawn> Spawns, IReadOnlyList<string> Prerequisites)
     {

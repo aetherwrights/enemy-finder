@@ -78,6 +78,7 @@ When searching for a fate, if the fate has a prerequisite all prerequisite fates
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Include FATE camps | Off | When looking up an **enemy**, also draw FATE camps for that enemy on the same map |
+| Ask duty or overworld | Off | When both exist, pick which map to open. Duty-only enemies still open the duty. |
 | Circle radius | 40 yalms | Range: 15–80 yalms |
 | Wiki cache size | 32 | 0–64 in-memory lookups. Cleared on unload, or with **Clear cache**. This is a quantity of lookups, not disk size |
 | History | Last 20 names | Click a row to look it up again. |
@@ -86,7 +87,7 @@ When searching for a fate, if the fate has a prerequisite all prerequisite fates
 
 - Gamer Escape and Console Games Wiki, in parallel
 - Standing overworld spawn locations by default, spawn locations that are unique to quests (I.e.: During a specific quest, the desired enemy will spawn - it will ignore those)
-- When several zones are listed, the lookup will favour the higher-level standing spawn location
+- When several zones are listed, prefers overworld camps over duties, then the higher-level standing camp
 - If a FATE needs another FATE first, a chain window lists them in order so you can show the prerequisite or the later FATE
 
 ## Not Supported

@@ -132,6 +132,15 @@ public sealed class Plugin : IDalamudPlugin
                 this.SaveConfig();
             }
 
+            var askDuty = this.config.AskDutyOrOverworld;
+            if (ImGui.Checkbox("Ask when an enemy is in a duty and the overworld", ref askDuty))
+            {
+                this.config.AskDutyOrOverworld = askDuty;
+                this.SaveConfig();
+            }
+
+            ImGui.TextDisabled("Off: overworld only, when it exists. Duty maps still open if that is the only location.");
+
             var radius = this.config.CircleRadiusYalms;
             if (ImGui.SliderInt("Circle radius (yalms)", ref radius, PluginConfig.MinRadiusYalms, PluginConfig.MaxRadiusYalms))
             {
