@@ -6,7 +6,7 @@
 
 <p align="center">A Dalamud plugin that shows enemy and FATE spawn areas on the native in-game map.</p>
 
-**Beta** (`0.1.0.0`). Install from the Dalamud plugin installer after adding the custom repository below. This is not a live enemy radar; it looks up standing spawn camps (and optionally FATE camps) and draws gathering-style circles on the map.
+**Beta** (`0.1.1.0`). Install from the Dalamud plugin installer after adding the custom repository below. This is not a live enemy radar; it looks up standing spawn camps (and optionally FATE camps) and draws gathering-style circles on the map.
 
 ## Install
 

@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.0.0</Version>
+    <Version>0.1.1.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -12,7 +12,7 @@
     <Tags>map;hunt;enemies</Tags>
     <RepoUrl>https://github.com/aetherwrights/enemy-finder</RepoUrl>
     <IconUrl>https://raw.githubusercontent.com/aetherwrights/enemy-finder/main/EnemyFinder/images/icon.png</IconUrl>
-    <Changelog>Initial public beta: hunt log, relic book (enemies and FATEs), Bozja field records, FATE chains, and /efind.</Changelog>
+    <Changelog>Prefer overworld spawn camps over duties. Optional prompt when an enemy exists in both.</Changelog>
   </PropertyGroup>
 
   <ItemGroup>

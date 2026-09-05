@@ -4,19 +4,19 @@
     "Name": "Enemy Finder",
     "Punchline": "Show enemy spawn areas on the native map.",
     "Description": "Click an enemy name in the hunting log, relic book, or other enemy lists to show its spawn area on the map. Relic book FATE clicks are optional and show FATE spawn areas, including prerequisite chains. Hunting log: click the name, not the icon. /efind opens settings; /efind Name looks up an enemy.",
-    "Changelog": "Initial public beta: hunt log, relic book (enemies and FATEs), Bozja field records, FATE chains, and /efind.",
+    "Changelog": "Prefer overworld spawn camps over duties. Optional prompt when an enemy exists in both.",
     "Tags": ["map", "hunt", "enemies"],
     "InternalName": "EnemyFinder",
     "RepoUrl": "https://github.com/aetherwrights/enemy-finder",
     "IconUrl": "https://raw.githubusercontent.com/aetherwrights/enemy-finder/main/EnemyFinder/images/icon.png",
-    "AssemblyVersion": "0.1.0.0",
+    "AssemblyVersion": "0.1.1.0",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://github.com/aetherwrights/enemy-finder/releases/download/v0.1.0.0/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/aetherwrights/enemy-finder/releases/download/v0.1.0.0/latest.zip",
-    "DownloadLinkTesting": "https://github.com/aetherwrights/enemy-finder/releases/download/v0.1.0.0/latest.zip",
-    "LastUpdate": "1788211969"
+    "DownloadLinkInstall": "https://github.com/aetherwrights/enemy-finder/releases/download/v0.1.1.0/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/aetherwrights/enemy-finder/releases/download/v0.1.1.0/latest.zip",
+    "DownloadLinkTesting": "https://github.com/aetherwrights/enemy-finder/releases/download/v0.1.1.0/latest.zip",
+    "LastUpdate": "1788620688"
   }
 ]

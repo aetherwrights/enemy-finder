@@ -79,7 +79,7 @@ public sealed class SpawnLocationProvider : IDisposable
         {
             Timeout = TimeSpan.FromSeconds(10),
         };
-        this.httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("EnemyFinder", "0.0.1"));
+        this.httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("EnemyFinder", "0.1.1"));
         this.httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
